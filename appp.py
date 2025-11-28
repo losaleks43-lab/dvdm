@@ -364,7 +364,7 @@ if "raw_df" in st.session_state:
     def get_idx(name, kind=None):
         if name not in label_idx:
             label_idx[name] = len(labels)
-            labels.append(name)
+            labels.append(f"<span style='color:white'>{name}</span>")
             role = node_role(name, kind)
             node_colors.append(role_color(role, alpha=0.5))  # lighter node blocks
         return label_idx[name]
