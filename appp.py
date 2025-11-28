@@ -337,6 +337,7 @@ if "raw_df" in st.session_state:
     company_for_title = st.session_state.company or "Apple Inc."
     period_for_title = st.session_state.period or "September 30, 2025"
     chart_title = f"{company_for_title} P&L for the year ended {period_for_title}"
+    units_text = f"(in millions of {st.session_state.currency})"
 
     palette = PALETTES.get(palette_name, PALETTES["Okabe Ito (Blue Green Orange)"])
 
@@ -381,7 +382,7 @@ if "raw_df" in st.session_state:
         values.append(v)
         link_colors.append(role_color("revenue"))
         # category-coloured label + grey number in text (visual approximation)
-        link_labels.append(f"{row['Item']} · {v:,.0f}")
+        link_labels.append(f"{row['Item']}\n{v:,.0f}")
 
     # Total Revenue -> COGS (cost) and Gross Profit (profit)
     if cogs > 0:
@@ -391,7 +392,7 @@ if "raw_df" in st.session_state:
         targets.append(t)
         values.append(cogs)
         link_colors.append(role_color("cost"))
-        link_labels.append(f"COGS · {cogs:,.0f}")
+        link_labels.append(f"COGS\n{cogs:,.0f}")
 
     s_tr = get_idx("Total Revenue")
     t_gp = get_idx("Gross Profit")
@@ -399,7 +400,7 @@ if "raw_df" in st.session_state:
     targets.append(t_gp)
     values.append(gross_profit)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Gross profit · {gross_profit:,.0f}")
+    link_labels.append(f"Gross profit\n{gross_profit:,.0f}")
 
     # Gross Profit -> Opex items (cost) and Operating Profit (profit)
     for cat in opex_cats:
@@ -411,7 +412,7 @@ if "raw_df" in st.session_state:
             targets.append(t)
             values.append(amt)
             link_colors.append(role_color("cost"))
-            link_labels.append(f"{cat} · {amt:,.0f}")
+            link_labels.append(f"{cat}\n{amt:,.0f}")
 
     s_gp = get_idx("Gross Profit")
     t_op = get_idx("Operating Profit")
@@ -419,7 +420,7 @@ if "raw_df" in st.session_state:
     targets.append(t_op)
     values.append(operating_profit)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Operating profit · {operating_profit:,.0f}")
+    link_labels.append(f"Operating profit\n{operating_profit:,.0f}")
 
     # Operating Profit -> Tax (cost) and Net Income (profit)
     if tax > 0:
@@ -429,7 +430,7 @@ if "raw_df" in st.session_state:
         targets.append(t)
         values.append(tax)
         link_colors.append(role_color("cost"))
-        link_labels.append(f"Tax · {tax:,.0f}")
+        link_labels.append(f"Tax\n{tax:,.0f}")
 
     s_op = get_idx("Operating Profit")
     t_ni = get_idx("Net Income")
@@ -437,7 +438,7 @@ if "raw_df" in st.session_state:
     targets.append(t_ni)
     values.append(net_income)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Net income · {net_income:,.0f}")
+    link_labels.append(f"Net income\n{net_income:,.0f}")
 
     fig = go.Figure(
         data=[
@@ -465,14 +466,14 @@ if "raw_df" in st.session_state:
     # so we choose a neutral grey that works on all branch colours.
     fig.update_layout(
         title=dict(
-            text=chart_title,
-            x=0.02,
-            y=0.98,
-            xanchor="left",
-            yanchor="top",
-            font=dict(size=24, color="#222222"),
-        ),
-        font=dict(color="#555555", size=11),
+    text=f"{chart_title}\n{units_text}",
+    x=0.02,
+    y=0.98,
+    xanchor="left",
+    yanchor="top",
+    font=dict(size=26, color="#000000"),
+),
+font=dict(color="#000000", size=14),
         margin=dict(l=30, r=30, t=110, b=70),  # more breathing room top and bottom
         height=640,  # a bit taller to emphasize long, slim branches
     )
