@@ -12,66 +12,60 @@ import base64
 import pandas as pd
 import plotly.graph_objects as go
 
-# Try importing OpenAI (Handles missing library gracefully)
+# Try importing OpenAI (handles missing library gracefully)
 try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
 
 # -------------------------------------------------------------------
-# 0. App Configuration & Styles
+# 0. App configuration and styles
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Financial Flow Auditor", layout="wide")
 
-# Base categories (used for data editor options)
+# Base categories (used for data editor options only)
 CATEGORY_COLORS = {
-    "Revenue": "#4285F4",       # Blue (Sources)
-    "COGS": "#DB4437",          # Red (Direct Costs)
-    "Gross Profit": "#BDBDBD",  # Grey (Calculated Node)
-    "R&D": "#AB47BC",           # Purple
-    "Sales & Marketing": "#F4B400",  # Yellow
-    "G&A": "#00ACC1",           # Teal
-    "Other Opex": "#8D6E63",    # Brown
-    "Tax": "#E91E63",           # Pink
-    "Net Income": "#0F9D58",    # Green
-    "Unallocated": "#9E9E9E",   # Grey (Reconciliation Gaps)
-    "Eliminations": "#5f6368"   # Dark Grey (Inter-segment)
+    "Revenue": "#4285F4",
+    "COGS": "#DB4437",
+    "Gross Profit": "#BDBDBD",
+    "R&D": "#AB47BC",
+    "Sales & Marketing": "#F4B400",
+    "G&A": "#00ACC1",
+    "Other Opex": "#8D6E63",
+    "Tax": "#E91E63",
+    "Net Income": "#0F9D58",
+    "Unallocated": "#9E9E9E",
+    "Eliminations": "#5f6368",
 }
 
 # Colorblind friendly palette options
+# Each palette gives one color for all revenue items, one for all profit items, one for all cost items
 PALETTES = {
-    "Okabe Ito (default)": {
-        "Revenue": "#0072B2",
-        "Revenue segment": "#56B4E9",
-        "COGS": "#D55E00",
-        "R&D": "#CC79A7",
-        "Sales & Marketing": "#E69F00",
-        "G&A": "#F0E442",
-        "Other Opex": "#999999",
-        "Tax": "#000000",
-        "Gross Profit": "#009E73",
-        "Operating Profit": "#009E73",
-        "Net Income": "#009E73",
-        "Unallocated": "#999999",
-        "Eliminations": "#555555",
-        "Total Revenue": "#0072B2"
+    "Okabe Ito (Blue Green Orange)": {
+        "revenue": "#0072B2",
+        "profit": "#009E73",
+        "cost": "#E69F00",
     },
-    "Blue Green Contrast": {
-        "Revenue": "#1f77b4",
-        "Revenue segment": "#6baed6",
-        "COGS": "#d62728",
-        "R&D": "#9467bd",
-        "Sales & Marketing": "#ff7f0e",
-        "G&A": "#2ca02c",
-        "Other Opex": "#8c564b",
-        "Tax": "#7f7f7f",
-        "Gross Profit": "#17becf",
-        "Operating Profit": "#17becf",
-        "Net Income": "#17becf",
-        "Unallocated": "#bdbdbd",
-        "Eliminations": "#636363",
-        "Total Revenue": "#1f77b4"
-    }
+    "Colorblind Safe (Purple Teal Orange)": {
+        "revenue": "#CC79A7",
+        "profit": "#009E73",
+        "cost": "#E69F00",
+    },
+    "High Contrast (Blue Green Red)": {
+        "revenue": "#1f77b4",
+        "profit": "#2ca02c",
+        "cost": "#d62728",
+    },
+    "Muted (Navy Olive Maroon)": {
+        "revenue": "#1b4f72",
+        "profit": "#7d6608",
+        "cost": "#922b21",
+    },
+    "Cyan Magenta Yellow": {
+        "revenue": "#00bcd4",
+        "profit": "#e91e63",
+        "cost": "#ffc107",
+    },
 }
 
 
@@ -85,11 +79,11 @@ def hex_to_rgba(hex_color, alpha=1.0):
 
 
 # -------------------------------------------------------------------
-# 1. Backend Logic: The AI "Vision Auditor"
+# 1. Backend logic: the AI vision auditor
 # -------------------------------------------------------------------
 
 def get_openai_client():
-    """Initializes OpenAI client from Secrets or Environment."""
+    """Initializes OpenAI client from secrets or environment."""
     try:
         api_key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
@@ -109,49 +103,47 @@ def encode_image(image_file):
 
 def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
     """
-    The Brain: Sends images to GPT-4o-mini to extract and reconcile data.
+    Sends images to GPT 4o mini to extract and reconcile data.
     """
     client = get_openai_client()
     if client is None:
-        return None, None, None, "Error: OpenAI API Key not found."
+        return None, None, None, None, "Error: OpenAI API Key not found."
 
     system_prompt = """
-    You are an expert Financial Auditor. You do not just extract numbers; you RECONCILE them.
+    You are an expert Financial Auditor. You do not just extract numbers; you reconcile them.
 
-    YOUR GOAL: Create a clean dataset for a 'Sankey Diagram' that maps Revenue Sources -> Gross Profit -> Net Income.
+    Your goal: Create a clean dataset for a Sankey Diagram that maps Revenue Sources -> Gross Profit -> Net Income.
 
-    INPUTS:
-    1. IMAGE A (P&L): The Consolidated Income Statement. This is the SOURCE OF TRUTH for Total Revenue, Total Expenses, and Net Income.
+    Inputs:
+    1. IMAGE A (P&L): The Consolidated Income Statement. This is the source of truth for Total Revenue, Total Expenses, and Net Income.
     2. IMAGE B (Segments): The Revenue Breakdown by Product or Geography.
 
-    IMPORTANT - ALWAYS USE THE MOST RECENT YEAR / PERIOD:
-    - If the P&L shows multiple periods (columns), you must use ONLY the most recent one (usually the rightmost column or the one with the latest date).
+    Always use the most recent year or period:
+    - If the P&L shows multiple periods (columns), you must use only the most recent one (usually the rightmost column or the one with the latest date).
     - All numbers you output must refer to that same most recent period.
     - Ignore earlier years and periods for the numeric output.
 
-    --- AUDIT ALGORITHM ---
-
-    STEP 1: ESTABLISH TOTALS (From Image A)
+    Step 1: Establish totals (from Image A)
     - Extract "Total Revenue" (or "Net Sales"). Call this [TR].
-      CRITICAL: If the report lists "Gross Revenue" (with Excise/GST) and "Net Revenue", YOU MUST USE "NET REVENUE".
-    - Identify the Business Model to find Direct Costs (COGS):
-      * Retail or Manufacturing: Sum of "Cost of Materials", "Purchase of Stock", "Changes in Inventories", "Excise Duty".
-      * Tech or Platform companies: "Cost of Revenues" (TAC, Data Centers, content acquisition, cloud infrastructure).
-    - Extract Operating Expenses (R&D, Sales and Marketing, G&A, Other operating expenses) and Tax.
+      If the report lists "Gross Revenue" and "Net Revenue", you must use "Net Revenue".
+    - Identify the business model to find Direct Costs (COGS):
+      * Retail or Manufacturing: sum of "Cost of Materials", "Purchase of Stock", "Changes in Inventories", "Excise Duty".
+      * Tech or Platform companies: "Cost of Revenues".
+    - Extract operating expenses (R&D, Sales and Marketing, G&A, Other operating expenses) and Tax.
 
-    STEP 2: RECONCILE REVENUE (From Image B)
+    Step 2: Reconcile revenue (from Image B)
     - Extract revenue segments (for example "Digital", "Retail"). Sum them up = [Sum_Seg].
     - Compare [Sum_Seg] vs [TR] for the same most recent period:
-      * MATCH: If they are close (<5 percent difference), use the segments as is.
-      * GAP: If [Sum_Seg] < [TR], add a segment "Unallocated Revenue" = [TR] - [Sum_Seg].
-      * OVERFLOW: If [Sum_Seg] > [TR] (usually due to inter segment sales), look for "Eliminations". If not found, proportionally scale down segments to match [TR].
+      * If close (difference less than 5 percent), use the segments as is.
+      * If [Sum_Seg] < [TR], add a segment "Unallocated Revenue" = [TR] - [Sum_Seg].
+      * If [Sum_Seg] > [TR], look for "Eliminations". If none, proportionally scale down segments to match [TR].
 
-    STEP 3: OUTPUT
+    Step 3: Output
     - Return a JSON object with one list of lines.
     - Normalize category names to: "Revenue", "COGS", "R&D", "Sales & Marketing", "G&A", "Other Opex", "Tax".
     - All amounts must be numeric (no commas, no text).
 
-    JSON FORMAT:
+    JSON format:
     {
         "company": "Company Name",
         "currency": "USD/INR/EUR",
@@ -165,7 +157,6 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
     }
     """
 
-    # Construct the visual payload
     user_content = [{"type": "text", "text": "Perform the financial audit on these images."}]
 
     if pnl_image_b64:
@@ -186,7 +177,6 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
             }
         )
 
-    # API Call
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -200,28 +190,33 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
 
         data = json.loads(response.choices[0].message.content)
 
-        # Post-processing to DataFrame
         df = pd.DataFrame(data.get("lines", []))
         if "category" not in df.columns:
             df["category"] = "Other Opex"
         df = df.rename(columns={"item": "Item", "amount": "Amount", "category": "Category"})
 
-        return df, data.get("company"), data.get("currency"), data.get("audit_note")
+        return (
+            df,
+            data.get("company"),
+            data.get("currency"),
+            data.get("period"),
+            data.get("audit_note"),
+        )
 
     except Exception as e:
-        return None, None, None, str(e)
+        return None, None, None, None, str(e)
 
 
 # -------------------------------------------------------------------
-# 2. Frontend UI: The "Place for Screenshots"
+# 2. Frontend UI: uploads
 # -------------------------------------------------------------------
 
 st.title("Financial Flow Auditor 🕵️‍♂️")
 st.markdown(
     """
-**How it works:**
-1. Upload the **Income Statement** (so we get the correct Profit & Margins).
-2. Upload the **Segment Breakdown** (so we know where the money comes from).
+How it works:
+1. Upload the Income Statement (so we get the correct profit and margins).
+2. Upload the Segment Breakdown (so we know where the money comes from).
 3. The AI reconciles them into one clean diagram.
 """
 )
@@ -231,64 +226,63 @@ with st.sidebar:
     st.header("Visual settings")
     palette_name = st.selectbox("Color palette", list(PALETTES.keys()), index=0)
 
-# --- THE TWO-COLUMN UPLOADER ---
+# Two column uploader
 col_input1, col_input2 = st.columns(2)
 
 with col_input1:
     st.subheader("1. Master P&L")
     st.caption("Upload the Consolidated Income Statement.")
-    pnl_file = st.file_uploader("Drop P&L Screenshot", type=["png", "jpg", "jpeg"], key="pnl")
+    pnl_file = st.file_uploader("Drop P&L screenshot", type=["png", "jpg", "jpeg"], key="pnl")
     if pnl_file:
         st.image(pnl_file, use_container_width=True)
 
 with col_input2:
-    st.subheader("2. Revenue Splits")
-    st.caption("Upload the Revenue by Segment/Product table.")
-    seg_file = st.file_uploader("Drop Segment Screenshot", type=["png", "jpg", "jpeg"], key="seg")
+    st.subheader("2. Revenue splits")
+    st.caption("Upload the Revenue by Segment or Product table.")
+    seg_file = st.file_uploader("Drop segment screenshot", type=["png", "jpg", "jpeg"], key="seg")
     if seg_file:
         st.image(seg_file, use_container_width=True)
 
-# --- ACTION BUTTON ---
+# Action button
 if pnl_file:
-    if st.button("Audit & Visualize", type="primary", use_container_width=True):
-        with st.spinner("AI Auditor is analyzing the images..."):
-            # 1. Encode
+    if st.button("Audit and visualize", type="primary", use_container_width=True):
+        with st.spinner("AI auditor is analyzing the images..."):
             pnl_b64 = encode_image(pnl_file)
             seg_b64 = encode_image(seg_file) if seg_file else None
 
-            # 2. Analyze
-            df_result, company, currency, note = audit_financials_with_vision(pnl_b64, seg_b64)
+            df_result, company, currency, period, note = audit_financials_with_vision(pnl_b64, seg_b64)
 
             if df_result is not None:
                 st.session_state.raw_df = df_result
+                st.session_state.company = company or ""
+                st.session_state.currency = currency or ""
+                st.session_state.period = period or ""
                 st.session_state.company_info = f"{company} ({currency})"
                 st.session_state.audit_note = note
-                st.success("Audit Complete!")
+                st.success("Audit complete.")
             else:
-                st.error(f"Analysis Failed: {note}")
+                st.error(f"Analysis failed: {note}")
 else:
-    st.info("👆 Please upload at least the Master P&L to begin.")
+    st.info("Please upload at least the Master P&L to begin.")
 
 # -------------------------------------------------------------------
-# 3. Visualization & Results
+# 3. Visualization and results
 # -------------------------------------------------------------------
 
 if "raw_df" in st.session_state:
     st.divider()
 
-    # Header & Note
     st.header(f"Results: {st.session_state.company_info}")
     if st.session_state.audit_note:
-        st.info(f"📝 **Auditor's Finding:** {st.session_state.audit_note}")
+        st.info(f"Auditor finding: {st.session_state.audit_note}")
 
-    # Layout: Data on Left, Chart on Right
-    col_data, col_viz = st.columns([1, 2])
+    # Level 1 layout: table (left) and KPIs (right)
+    col_data, col_kpi = st.columns([2, 1])
 
     with col_data:
-        st.subheader("Reconciled Data")
+        st.subheader("Reconciled data")
         df = st.session_state.raw_df.copy()
 
-        # Editable Table
         edited_df = st.data_editor(
             df,
             column_config={
@@ -302,173 +296,178 @@ if "raw_df" in st.session_state:
             use_container_width=True,
             num_rows="dynamic",
         )
-        clean_df = edited_df.copy()
 
-    with col_viz:
-        # --- CALCULATE SANKEY FLOWS ---
-        grp = clean_df.groupby("Category")["Amount"].sum()
+    clean_df = edited_df.copy()
 
-        # 1. Revenue
-        rev_segments = clean_df[clean_df["Category"] == "Revenue"]
-        total_revenue = grp.get("Revenue", 0)
+    # Aggregate metrics based on edited data
+    grp = clean_df.groupby("Category")["Amount"].sum()
 
-        # 2. Costs
-        cogs = grp.get("COGS", 0)
-        gross_profit = total_revenue - cogs
+    rev_segments = clean_df[clean_df["Category"] == "Revenue"]
+    total_revenue = grp.get("Revenue", 0)
 
-        # 3. Opex
-        opex_cats = ["R&D", "Sales & Marketing", "G&A", "Other Opex"]
-        total_opex = sum(grp.get(c, 0) for c in opex_cats)
+    cogs = grp.get("COGS", 0)
+    gross_profit = total_revenue - cogs
 
-        # 4. Profit
-        operating_profit = gross_profit - total_opex
-        tax = grp.get("Tax", 0)
-        net_income = operating_profit - tax
+    opex_cats = ["R&D", "Sales & Marketing", "G&A", "Other Opex"]
+    total_opex = sum(grp.get(c, 0) for c in opex_cats)
 
-        # --- METRICS ROW ---
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Revenue", f"{total_revenue:,.0f}")
+    operating_profit = gross_profit - total_opex
+    tax = grp.get("Tax", 0)
+    net_income = operating_profit - tax
+
+    with col_kpi:
+        st.subheader("Key metrics")
+        m_row1_col1, m_row1_col2 = st.columns(2)
+        m_row2_col1, m_row2_col2 = st.columns(2)
+
+        m_row1_col1.metric("Revenue", f"{total_revenue:,.0f}")
+        m_row1_col2.metric("Gross profit", f"{gross_profit:,.0f}")
+
         if total_revenue > 0:
-            m2.metric("Gross Margin", f"{(gross_profit / total_revenue) * 100:.1f}%")
-            m3.metric("Op Margin", f"{(operating_profit / total_revenue) * 100:.1f}%")
-            m4.metric("Net Margin", f"{(net_income / total_revenue) * 100:.1f}%")
+            m_row2_col1.metric("Operating margin", f"{(operating_profit / total_revenue) * 100:.1f}%")
+            m_row2_col2.metric("Net margin", f"{(net_income / total_revenue) * 100:.1f}%")
+        else:
+            m_row2_col1.metric("Operating margin", "n/a")
+            m_row2_col2.metric("Net margin", "n/a")
 
-        # --- PALETTE SELECTION FOR THIS CHART ---
-        palette = PALETTES.get(palette_name, PALETTES["Okabe Ito (default)"])
+    # Level 2: chart below
+    if st.session_state.company or st.session_state.period:
+        chart_title = f"{st.session_state.company} {st.session_state.period} P&L"
+    else:
+        chart_title = "Flow diagram"
 
-        def color_for(name, kind=None):
-            """
-            kind can be 'segment', 'profit', 'cost' etc.
-            We map segments to Revenue colors unless a more specific color exists.
-            """
-            if kind == "segment":
-                base = palette.get("Revenue segment", palette.get("Revenue", "#0072B2"))
-            else:
-                base = palette.get(name, None)
-                if base is None:
-                    # Map profit style nodes
-                    if name in ["Gross Profit", "Operating Profit", "Net Income", "Total Revenue"]:
-                        base = palette.get("Gross Profit", "#009E73")
-                    # Map cost like nodes
-                    elif name in [
-                        "COGS",
-                        "R&D",
-                        "Sales & Marketing",
-                        "G&A",
-                        "Other Opex",
-                        "Tax",
-                        "Unallocated",
-                        "Eliminations",
-                    ]:
-                        base = palette.get("Other Opex", "#999999")
-                    else:
-                        base = "#999999"
-            return base
+    st.subheader(chart_title)
 
-        labels, sources, targets, values = [], [], [], []
-        node_colors, link_colors = [], []
-        label_idx = {}
+    palette = PALETTES.get(palette_name, PALETTES["Okabe Ito (Blue Green Orange)"])
 
-        def get_idx(name, kind=None):
-            if name not in label_idx:
-                label_idx[name] = len(labels)
-                labels.append(name)
+    def node_role(name, kind=None):
+        """Map node names to semantic roles: revenue, profit, cost."""
+        if kind == "segment":
+            return "revenue"
+        if name in ["Total Revenue", "Revenue"]:
+            return "revenue"
+        if name in ["Gross Profit", "Operating Profit", "Net Income"]:
+            return "profit"
+        return "cost"
 
-                base_hex = color_for(name, kind=kind)
-                # Nodes slightly transparent, links full color
-                node_colors.append(hex_to_rgba(base_hex, 0.6))
-            return label_idx[name]
+    def role_color(role, alpha=1.0):
+        base_hex = palette.get(role, "#999999")
+        if alpha >= 1.0:
+            return base_hex
+        return hex_to_rgba(base_hex, alpha)
 
-        # Node: Segments -> Total Revenue
-        for _, row in rev_segments.iterrows():
-            s = get_idx(row["Item"], kind="segment")
-            t = get_idx("Total Revenue")
-            v = row["Amount"]
+    labels, sources, targets, values = [], [], [], []
+    node_colors, link_colors, link_labels = [], [], []
+    label_idx = {}
 
+    def get_idx(name, kind=None):
+        if name not in label_idx:
+            label_idx[name] = len(labels)
+            labels.append(name)
+            role = node_role(name, kind)
+            # lighter nodes, slimmer branches visual
+            node_colors.append(role_color(role, alpha=0.5))
+        return label_idx[name]
+
+    # Segments -> Total Revenue (revenue color)
+    for _, row in rev_segments.iterrows():
+        s = get_idx(row["Item"], kind="segment")
+        t = get_idx("Total Revenue")
+        v = row["Amount"]
+
+        sources.append(s)
+        targets.append(t)
+        values.append(v)
+        link_colors.append(role_color("revenue"))  # coloured branch
+        link_labels.append(f"{row['Item']} {v:,.0f}")  # label plus data
+
+    # Total Revenue -> COGS (cost) and Gross Profit (profit)
+    if cogs > 0:
+        s = get_idx("Total Revenue")
+        t = get_idx("COGS")
+        sources.append(s)
+        targets.append(t)
+        values.append(cogs)
+        link_colors.append(role_color("cost"))
+        link_labels.append(f"COGS {cogs:,.0f}")
+
+    s_tr = get_idx("Total Revenue")
+    t_gp = get_idx("Gross Profit")
+    sources.append(s_tr)
+    targets.append(t_gp)
+    values.append(gross_profit)
+    link_colors.append(role_color("profit"))
+    link_labels.append(f"Gross profit {gross_profit:,.0f}")
+
+    # Gross Profit -> Opex items (cost) and Operating Profit (profit)
+    for cat in opex_cats:
+        amt = grp.get(cat, 0)
+        if amt > 0:
+            s = get_idx("Gross Profit")
+            t = get_idx(cat)
             sources.append(s)
             targets.append(t)
-            values.append(v)
-            link_colors.append(color_for("Revenue"))
+            values.append(amt)
+            link_colors.append(role_color("cost"))
+            link_labels.append(f"{cat} {amt:,.0f}")
 
-        # Node: Total Revenue -> COGS and Gross Profit
-        if cogs > 0:
-            s = get_idx("Total Revenue")
-            t = get_idx("COGS")
-            sources.append(s)
-            targets.append(t)
-            values.append(cogs)
-            link_colors.append(color_for("COGS"))
+    s_gp = get_idx("Gross Profit")
+    t_op = get_idx("Operating Profit")
+    sources.append(s_gp)
+    targets.append(t_op)
+    values.append(operating_profit)
+    link_colors.append(role_color("profit"))
+    link_labels.append(f"Operating profit {operating_profit:,.0f}")
 
-        s_tr = get_idx("Total Revenue")
-        t_gp = get_idx("Gross Profit")
-        sources.append(s_tr)
-        targets.append(t_gp)
-        values.append(gross_profit)
-        link_colors.append(color_for("Gross Profit"))
+    # Operating Profit -> Tax (cost) and Net Income (profit)
+    if tax > 0:
+        s = get_idx("Operating Profit")
+        t = get_idx("Tax")
+        sources.append(s)
+        targets.append(t)
+        values.append(tax)
+        link_colors.append(role_color("cost"))
+        link_labels.append(f"Tax {tax:,.0f}")
 
-        # Node: Gross Profit -> Opex and Operating Profit
-        for cat in opex_cats:
-            amt = grp.get(cat, 0)
-            if amt > 0:
-                s = get_idx("Gross Profit")
-                t = get_idx(cat)
-                sources.append(s)
-                targets.append(t)
-                values.append(amt)
-                link_colors.append(color_for(cat))
+    s_op = get_idx("Operating Profit")
+    t_ni = get_idx("Net Income")
+    sources.append(s_op)
+    targets.append(t_ni)
+    values.append(net_income)
+    link_colors.append(role_color("profit"))
+    link_labels.append(f"Net income {net_income:,.0f}")
 
-        s_gp = get_idx("Gross Profit")
-        t_op = get_idx("Operating Profit")
-        sources.append(s_gp)
-        targets.append(t_op)
-        values.append(operating_profit)
-        link_colors.append(color_for("Operating Profit"))
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                node=dict(
+                    pad=30,  # more horizontal spacing, visually longer branches
+                    thickness=10,  # slimmer branches
+                    line=dict(color="rgba(160,160,160,0.3)", width=0.4),
+                    label=labels,
+                    color=node_colors,
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color=link_colors,
+                    label=link_labels,  # labels on branches
+                ),
+                valueformat=",",
+            )
+        ]
+    )
 
-        # Node: Operating Profit -> Tax and Net Income
-        if tax > 0:
-            s = get_idx("Operating Profit")
-            t = get_idx("Tax")
-            sources.append(s)
-            targets.append(t)
-            values.append(tax)
-            link_colors.append(color_for("Tax"))
+    # Labels and data labels:
+    # text is rendered in grey on top of coloured branches
+    fig.update_layout(
+        font=dict(color="#666666", size=11),  # slightly smaller grey font
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=520,  # a bit lower, so branches feel longer compared to node size
+    )
 
-        s_op = get_idx("Operating Profit")
-        t_ni = get_idx("Net Income")
-        sources.append(s_op)
-        targets.append(t_ni)
-        values.append(net_income)
-        link_colors.append(color_for("Net Income"))
+    st.plotly_chart(fig, use_container_width=True)
 
-        # Render
-        fig = go.Figure(
-            data=[
-                go.Sankey(
-                    node=dict(
-                        pad=20,
-                        thickness=20,
-                        line=dict(color="rgba(150,150,150,0.4)", width=0.5),
-                        label=labels,
-                        color=node_colors,
-                    ),
-                    link=dict(
-                        source=sources,
-                        target=targets,
-                        value=values,
-                        color=link_colors,
-                    ),
-                    valueformat=",",
-                )
-            ]
-        )
-
-        # Labels in grey, flows carry the color
-        fig.update_layout(
-            font=dict(color="#555555", size=12),
-            margin=dict(l=10, r=10, t=40, b=10),
-            height=600,
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
 
 
