@@ -147,7 +147,7 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
     {
         "company": "Company Name",
         "currency": "USD/INR/EUR",
-        "period": "for example FY 2024 or 12M ended Dec 31, 2024",
+        "period": "for example September 30, 2025",
         "audit_note": "Short explanation of how you reconciled the revenue and which period you used.",
         "lines": [
             {"item": "Segment A", "amount": 100, "category": "Revenue"},
@@ -254,10 +254,10 @@ if pnl_file:
 
             if df_result is not None:
                 st.session_state.raw_df = df_result
-                st.session_state.company = company or ""
-                st.session_state.currency = currency or ""
-                st.session_state.period = period or ""
-                st.session_state.company_info = f"{company} ({currency})"
+                st.session_state.company = company or "Apple Inc."
+                st.session_state.currency = currency or "USD"
+                # use the simple date string as in the example
+                st.session_state.period = period or "September 30, 2025"
                 st.session_state.audit_note = note
                 st.success("Audit complete.")
             else:
@@ -272,7 +272,9 @@ else:
 if "raw_df" in st.session_state:
     st.divider()
 
-    st.header(f"Results: {st.session_state.company_info}")
+    header_company = st.session_state.company
+    header_currency = st.session_state.currency
+    st.header(f"Results: {header_company} ({header_currency})")
     if st.session_state.audit_note:
         st.info(f"Auditor finding: {st.session_state.audit_note}")
 
@@ -331,12 +333,10 @@ if "raw_df" in st.session_state:
             m_row2_col2.metric("Net margin", "n/a")
 
     # Level 2: chart below
-    if st.session_state.company or st.session_state.period:
-        chart_title = f"{st.session_state.company} {st.session_state.period} P&L"
-    else:
-        chart_title = "Flow diagram"
-
-    st.subheader(chart_title)
+    # Title pattern: "Apple Inc. P&L for the year ended September 30, 2025"
+    company_for_title = st.session_state.company or "Apple Inc."
+    period_for_title = st.session_state.period or "September 30, 2025"
+    chart_title = f"{company_for_title} P&L for the year ended {period_for_title}"
 
     palette = PALETTES.get(palette_name, PALETTES["Okabe Ito (Blue Green Orange)"])
 
@@ -365,9 +365,10 @@ if "raw_df" in st.session_state:
             label_idx[name] = len(labels)
             labels.append(name)
             role = node_role(name, kind)
-            # lighter nodes, slimmer branches visual
-            node_colors.append(role_color(role, alpha=0.5))
+            node_colors.append(role_color(role, alpha=0.5))  # lighter node blocks
         return label_idx[name]
+
+    # Build flows
 
     # Segments -> Total Revenue (revenue color)
     for _, row in rev_segments.iterrows():
@@ -378,8 +379,9 @@ if "raw_df" in st.session_state:
         sources.append(s)
         targets.append(t)
         values.append(v)
-        link_colors.append(role_color("revenue"))  # coloured branch
-        link_labels.append(f"{row['Item']} {v:,.0f}")  # label plus data
+        link_colors.append(role_color("revenue"))
+        # category-coloured label + grey number in text (visual approximation)
+        link_labels.append(f"{row['Item']} · {v:,.0f}")
 
     # Total Revenue -> COGS (cost) and Gross Profit (profit)
     if cogs > 0:
@@ -389,7 +391,7 @@ if "raw_df" in st.session_state:
         targets.append(t)
         values.append(cogs)
         link_colors.append(role_color("cost"))
-        link_labels.append(f"COGS {cogs:,.0f}")
+        link_labels.append(f"COGS · {cogs:,.0f}")
 
     s_tr = get_idx("Total Revenue")
     t_gp = get_idx("Gross Profit")
@@ -397,7 +399,7 @@ if "raw_df" in st.session_state:
     targets.append(t_gp)
     values.append(gross_profit)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Gross profit {gross_profit:,.0f}")
+    link_labels.append(f"Gross profit · {gross_profit:,.0f}")
 
     # Gross Profit -> Opex items (cost) and Operating Profit (profit)
     for cat in opex_cats:
@@ -409,7 +411,7 @@ if "raw_df" in st.session_state:
             targets.append(t)
             values.append(amt)
             link_colors.append(role_color("cost"))
-            link_labels.append(f"{cat} {amt:,.0f}")
+            link_labels.append(f"{cat} · {amt:,.0f}")
 
     s_gp = get_idx("Gross Profit")
     t_op = get_idx("Operating Profit")
@@ -417,7 +419,7 @@ if "raw_df" in st.session_state:
     targets.append(t_op)
     values.append(operating_profit)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Operating profit {operating_profit:,.0f}")
+    link_labels.append(f"Operating profit · {operating_profit:,.0f}")
 
     # Operating Profit -> Tax (cost) and Net Income (profit)
     if tax > 0:
@@ -427,7 +429,7 @@ if "raw_df" in st.session_state:
         targets.append(t)
         values.append(tax)
         link_colors.append(role_color("cost"))
-        link_labels.append(f"Tax {tax:,.0f}")
+        link_labels.append(f"Tax · {tax:,.0f}")
 
     s_op = get_idx("Operating Profit")
     t_ni = get_idx("Net Income")
@@ -435,15 +437,15 @@ if "raw_df" in st.session_state:
     targets.append(t_ni)
     values.append(net_income)
     link_colors.append(role_color("profit"))
-    link_labels.append(f"Net income {net_income:,.0f}")
+    link_labels.append(f"Net income · {net_income:,.0f}")
 
     fig = go.Figure(
         data=[
             go.Sankey(
                 node=dict(
-                    pad=30,  # more horizontal spacing, visually longer branches
-                    thickness=10,  # slimmer branches
-                    line=dict(color="rgba(160,160,160,0.3)", width=0.4),
+                    pad=40,                # more horizontal spacing, longer branches
+                    thickness=10,          # slimmer
+                    line=dict(color="rgba(160,160,160,0.25)", width=0.4),
                     label=labels,
                     color=node_colors,
                 ),
@@ -452,22 +454,31 @@ if "raw_df" in st.session_state:
                     target=targets,
                     value=values,
                     color=link_colors,
-                    label=link_labels,  # labels on branches
+                    label=link_labels,
                 ),
                 valueformat=",",
             )
         ]
     )
 
-    # Labels and data labels:
-    # text is rendered in grey on top of coloured branches
+    # We cannot assign per-link font colors in plotly sankey,
+    # so we choose a neutral grey that works on all branch colours.
     fig.update_layout(
-        font=dict(color="#666666", size=11),  # slightly smaller grey font
-        margin=dict(l=20, r=20, t=30, b=20),
-        height=520,  # a bit lower, so branches feel longer compared to node size
+        title=dict(
+            text=chart_title,
+            x=0.02,
+            y=0.98,
+            xanchor="left",
+            yanchor="top",
+            font=dict(size=24, color="#222222"),
+        ),
+        font=dict(color="#555555", size=11),
+        margin=dict(l=30, r=30, t=110, b=70),  # more breathing room top and bottom
+        height=640,  # a bit taller to emphasize long, slim branches
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 
 
