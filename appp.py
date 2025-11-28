@@ -439,12 +439,12 @@ if "raw_df" in st.session_state:
     link_colors.append(role_color("profit"))
     link_labels.append(f"Net income · {net_income:,.0f}")
 
-    fig = go.Figure(
+      fig = go.Figure(
         data=[
             go.Sankey(
                 node=dict(
-                    pad=40,                # more horizontal spacing, longer branches
-                    thickness=10,          # slimmer
+                    pad=40,                
+                    thickness=10,          
                     line=dict(color="rgba(160,160,160,0.25)", width=0.4),
                     label=labels,
                     color=node_colors,
@@ -461,18 +461,21 @@ if "raw_df" in st.session_state:
         ]
     )
 
-def luminance(hex_color):
-    r = int(hex_color[1:3], 16) / 255
-    g = int(hex_color[3:5], 16) / 255
-    b = int(hex_color[5:7], 16) / 255
-    return 0.2126*r + 0.7152*g + 0.0722*b
-    
-def best_text_color(bg_hex):
-    return "#FFFFFF" if luminance(bg_hex) < 0.5 else "#000000"
+    # -----------------------------
+    # CONTRAST FUNCTIONS (properly OUTSIDE the Sankey creation)
+    # -----------------------------
+    def luminance(hex_color):
+        r = int(hex_color[1:3], 16) / 255
+        g = int(hex_color[3:5], 16) / 255
+        b = int(hex_color[5:7], 16) / 255
+        return 0.2126*r + 0.7152*g + 0.0722*b
 
+    def best_text_color(bg_hex):
+        return "#FFFFFF" if luminance(bg_hex) < 0.5 else "#000000"
 
-    # We cannot assign per-link font colors in plotly sankey,
-    # so we choose a neutral grey that works on all branch colours.
+    # -----------------------------
+    # LAYOUT (NO LONGER INDENTED WRONG)
+    # -----------------------------
     fig.update_layout(
         title=dict(
             text=chart_title,
@@ -483,12 +486,13 @@ def best_text_color(bg_hex):
             font=dict(size=24, color="#222222"),
         ),
         font=dict(color="#555555", size=11),
-        margin=dict(l=30, r=30, t=110, b=70),  # more breathing room top and bottom
-        height=640,  # a bit taller to emphasize long, slim branches
+        margin=dict(l=30, r=30, t=110, b=70),
+        height=640,
     )
 
+    # -----------------------------
+    # SHOW CHART
+    # -----------------------------
     st.plotly_chart(fig, use_container_width=True)
-
-
 
 
