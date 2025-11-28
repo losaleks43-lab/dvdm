@@ -444,13 +444,14 @@ if "raw_df" in st.session_state:
     fig = go.Figure(
         data=[
             go.Sankey(
-                node=dict(
-                    pad=40,                # more horizontal spacing, longer branches
-                    thickness=10,          # slimmer
-                    line=dict(color="rgba(160,160,160,0.25)", width=0.4),
-                    label=labels,
-                    color=node_colors,
-                ),
+               node=dict(
+    pad=40,
+    thickness=10,
+    line=dict(color="rgba(160,160,160,0.25)", width=0.4),
+    label=labels,
+    color=node_colors,
+    font=dict(color="#FFFFFF", size=14),  # force white node labels
+                        ),
                 link=dict(
                     source=sources,
                     target=targets,
