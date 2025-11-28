@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.write("### DEBUG: Vision Auditor build 2025-11-28")
+st.write("### DEBUG: Visual Wizard build 2025-11")
 
 # app.py
 # "How X Makes Money" - Vision Auditor Edition
@@ -21,7 +21,7 @@ except ImportError:
 # -------------------------------------------------------------------
 # 0. App configuration and styles
 # -------------------------------------------------------------------
-st.set_page_config(page_title="Financial Flow Auditor", layout="wide")
+st.set_page_config(page_title="Visual Wizard", layout="wide")
 
 # Base categories (used for data editor options only)
 CATEGORY_COLORS = {
@@ -211,7 +211,7 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
 # 2. Frontend UI: uploads
 # -------------------------------------------------------------------
 
-st.title("Financial Flow Auditor 🕵️‍♂️")
+st.title("Visual Wizard 🔮")
 st.markdown(
     """
 How it works:
@@ -246,7 +246,8 @@ with col_input2:
 # Action button
 if pnl_file:
     if st.button("Audit and visualize", type="primary", use_container_width=True):
-        with st.spinner("AI auditor is analyzing the images..."):
+        with st.spinner("Visual Wizard is analyzing the images..."):
+
             pnl_b64 = encode_image(pnl_file)
             seg_b64 = encode_image(seg_file) if seg_file else None
 
@@ -259,7 +260,8 @@ if pnl_file:
                 # use the simple date string as in the example
                 st.session_state.period = period or "September 30, 2025"
                 st.session_state.audit_note = note
-                st.success("Audit complete.")
+                st.success("Visuals ready.")
+
             else:
                 st.error(f"Analysis failed: {note}")
 else:
@@ -276,7 +278,8 @@ if "raw_df" in st.session_state:
     header_currency = st.session_state.currency
     st.header(f"Results: {header_company} ({header_currency})")
     if st.session_state.audit_note:
-        st.info(f"Auditor finding: {st.session_state.audit_note}")
+        st.info(f"Visual insight: {st.session_state.audit_note}")
+
 
     # Level 1 layout: table (left) and KPIs (right)
     col_data, col_kpi = st.columns([2, 1])
