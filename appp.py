@@ -461,6 +461,16 @@ if "raw_df" in st.session_state:
         ]
     )
 
+def luminance(hex_color):
+    r = int(hex_color[1:3], 16) / 255
+    g = int(hex_color[3:5], 16) / 255
+    b = int(hex_color[5:7], 16) / 255
+    return 0.2126*r + 0.7152*g + 0.0722*b
+    
+def best_text_color(bg_hex):
+    return "#FFFFFF" if luminance(bg_hex) < 0.5 else "#000000"
+
+
     # We cannot assign per-link font colors in plotly sankey,
     # so we choose a neutral grey that works on all branch colours.
     fig.update_layout(
