@@ -479,87 +479,89 @@ font=dict(color="#FFFFFF", size=14),
         height=640,  # a bit taller to emphasize long, slim branches
     )
 
-       st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
 
-    # -------------------------------------------------------------------
-    # 4. Marimekko-style 1D strip (category weight view)
-    # -------------------------------------------------------------------
-    st.subheader("Category weight view (Marimekko-style strip)")
+# -------------------------------------------------------------------
+# 4. Marimekko-style 1D strip (category weight view)
+# -------------------------------------------------------------------
+st.subheader("Category weight view (Marimekko-style strip)")
 
-    mekko_items = []
-    mekko_values = []
-    mekko_colors = []
+mekko_items = []
+mekko_values = []
+mekko_colors = []
 
-    # Revenue segments (same as in Sankey)
-    for _, row in rev_segments.iterrows():
-        mekko_items.append(row["Item"])
-        mekko_values.append(float(row["Amount"]))
-        mekko_colors.append(role_color("revenue"))
+# Revenue segments
+for _, row in rev_segments.iterrows():
+    mekko_items.append(row["Item"])
+    mekko_values.append(float(row["Amount"]))
+    mekko_colors.append(role_color("revenue"))
 
-    # Top-level P&L items
-    if cogs > 0:
-        mekko_items.append("COGS")
-        mekko_values.append(float(cogs))
+# COGS
+if cogs > 0:
+    mekko_items.append("COGS")
+    mekko_values.append(float(cogs))
+    mekko_colors.append(role_color("cost"))
+
+# Opex categories
+for cat in opex_cats:
+    amt = float(grp.get(cat, 0.0))
+    if amt > 0:
+        mekko_items.append(cat)
+        mekko_values.append(amt)
         mekko_colors.append(role_color("cost"))
 
-    for cat in opex_cats:
-        amt = float(grp.get(cat, 0.0))
-        if amt > 0:
-            mekko_items.append(cat)
-            mekko_values.append(amt)
-            mekko_colors.append(role_color("cost"))
+# Tax
+if tax > 0:
+    mekko_items.append("Tax")
+    mekko_values.append(float(tax))
+    mekko_colors.append(role_color("cost"))
 
-    if tax > 0:
-        mekko_items.append("Tax")
-        mekko_values.append(float(tax))
-        mekko_colors.append(role_color("cost"))
+# Net Income (positive block)
+if net_income != 0:
+    mekko_items.append("Net income")
+    mekko_values.append(float(abs(net_income)))
+    mekko_colors.append(role_color("profit"))
 
-    if net_income != 0:
-        mekko_items.append("Net income")
-        mekko_values.append(float(abs(net_income)))
-        mekko_colors.append(role_color("profit"))
+if mekko_items:
+    abs_vals = [abs(v) for v in mekko_values]
+    total_abs = sum(abs_vals) if sum(abs_vals) != 0 else 1.0
 
-    if mekko_items:
-        abs_vals = [abs(v) for v in mekko_values]
-        total_abs = sum(abs_vals) if sum(abs_vals) != 0 else 1.0
+    widths = [v / total_abs for v in abs_vals]
 
-        widths = [v / total_abs for v in abs_vals]
+    xs = []
+    cum = 0.0
+    for w in widths:
+        xs.append(cum + w / 2.0)
+        cum += w
 
-        xs = []
-        cum = 0.0
-        for w in widths:
-            xs.append(cum + w / 2.0)
-            cum += w
+    mekko_fig = go.Figure(
+        data=[
+            go.Bar(
+                x=xs,
+                y=[1.0] * len(xs),
+                width=widths,
+                marker_color=mekko_colors,
+                marker_line_color="white",
+                marker_line_width=1,
+                text=[f"{name}\n{val:,.0f}" for name, val in zip(mekko_items, mekko_values)],
+                textposition="inside",
+                hovertext=[
+                    f"{name}: {val:,.0f} ({abs(val) / total_abs:,.1%})"
+                    for name, val in zip(mekko_items, mekko_values)
+                ],
+                hoverinfo="text",
+            )
+        ]
+    )
 
-        mekko_fig = go.Figure(
-            data=[
-                go.Bar(
-                    x=xs,
-                    y=[1.0] * len(xs),
-                    width=widths,
-                    marker_color=mekko_colors,
-                    marker_line_color="white",
-                    marker_line_width=1,
-                    text=[f"{name}\n{val:,.0f}" for name, val in zip(mekko_items, mekko_values)],
-                    textposition="inside",
-                    hovertext=[
-                        f"{name}: {val:,.0f} ({abs(val) / total_abs:,.1%})"
-                        for name, val in zip(mekko_items, mekko_values)
-                    ],
-                    hoverinfo="text",
-                )
-            ]
-        )
+    mekko_fig.update_xaxes(visible=False, showticklabels=False, range=[0, 1])
+    mekko_fig.update_yaxes(visible=False, showticklabels=False, range=[0, 1.2])
 
-        mekko_fig.update_xaxes(visible=False, showticklabels=False, range=[0, 1])
-        mekko_fig.update_yaxes(visible=False, showticklabels=False, range=[0, 1.2])
+    mekko_fig.update_layout(
+        height=220,
+        margin=dict(l=40, r=40, t=40, b=40),
+        font=dict(size=12),
+    )
 
-        mekko_fig.update_layout(
-            height=220,
-            margin=dict(l=40, r=40, t=40, b=40),
-            yaxis_title="",
-            xaxis_title="",
-            font=dict(size=12),
-        )
+    st.plotly_chart(mekko_fig, use_container_width=True)
 
-        st.plotly_chart(mekko_fig, use_container_width=True)
