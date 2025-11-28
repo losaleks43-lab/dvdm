@@ -384,6 +384,7 @@ if "raw_df" in st.session_state:
         # category-coloured label + grey number in text (visual approximation)
         link_labels.append(f"{row['Item']}\n{v:,.0f}")
 
+
     # Total Revenue -> COGS (cost) and Gross Profit (profit)
     if cogs > 0:
         s = get_idx("Total Revenue")
@@ -430,7 +431,7 @@ if "raw_df" in st.session_state:
         targets.append(t)
         values.append(tax)
         link_colors.append(role_color("cost"))
-        link_labels.append(f"Tax\n{tax:,.0f}")
+        link_labels.append(f"Operating profit\n{operating_profit:,.0f}")
 
     s_op = get_idx("Operating Profit")
     t_ni = get_idx("Net Income")
@@ -473,7 +474,7 @@ if "raw_df" in st.session_state:
     yanchor="top",
     font=dict(size=26, color="#000000"),
 ),
-font=dict(color="#000000", size=14),
+font=dict(color="#FFFFFF", size=14),
         margin=dict(l=30, r=30, t=110, b=70),  # more breathing room top and bottom
         height=640,  # a bit taller to emphasize long, slim branches
     )
