@@ -37,7 +37,7 @@ CATEGORY_COLORS = {
     "Eliminations": "#5f6368",
 }
 
-# Palette: one color for all revenues, one for all profits, one for all costs
+# Palette: one colour for all revenues, one for profits, one for costs
 PALETTES = {
     "Okabe Ito (Blue Green Orange)": {
         "revenue": "#0072B2",
@@ -98,7 +98,7 @@ def encode_image(image_file):
 def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
     """
     Sends images to GPT-4o-mini to extract and reconcile data.
-    Returns: df, company, currency, period, audit_note OR (None, ... , error_msg)
+    Returns: df, company, currency, period, audit_note OR (None, ..., error_msg)
     """
     client = get_openai_client()
     if client is None:
@@ -110,20 +110,27 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
     Goal: Create a clean dataset for a Sankey diagram:
     Revenue segments -> Total Revenue -> Gross Profit -> Operating Profit -> Net Income.
 
-    Always use ONLY the most recent period (latest year / latest column).
+    Always use ONLY the most recent period (latest year / right-most column).
 
     Output JSON:
     {
       "company": "Company Name",
       "currency": "USD/EUR/INR",
       "period": "for example September 30, 2025",
-      "audit_note": "Short note",
+      "audit_note": "Short note on reconciliation and period used",
       "lines": [
-        {"item": "iPhone", "amount": 100, "category": "Revenue"},
-        {"item": "Cost of sales", "amount": 60, "category": "COGS"},
-        {"item": "Tax", "amount": 10, "category": "Tax"}
+        {"item": "iPhone", "amount": 209586, "category": "Revenue"},
+        {"item": "Total net sales", "amount": 416161, "category": "Revenue"},
+        {"item": "Cost of sales", "amount": 220960, "category": "COGS"},
+        {"item": "Gross margin", "amount": 195201, "category": "Gross Profit"},
+        {"item": "Research and development", "amount": 34550, "category": "R&D"},
+        {"item": "Selling, general and administrative", "amount": 27501, "category": "Sales & Marketing"},
+        {"item": "Total operating expenses", "amount": 62151, "category": "Other Opex"},
+        {"item": "Provision for income taxes", "amount": 20719, "category": "Tax"},
+        {"item": "Net income", "amount": 112010, "category": "Net Income"}
       ]
     }
+    All amounts must be numeric only (no commas, no currency symbols).
     """
 
     user_content = [{"type": "text", "text": "Perform the financial audit on these images."}]
@@ -155,10 +162,10 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
 
         df = pd.DataFrame(data.get("lines", []))
 
-        # Robust column normalisation (handles amount/Amount, category/Category, item/Item)
         if df.empty:
             return None, None, None, None, "AI returned no data lines."
 
+        # Robust column normalisation (handles amount/Amount, category/Category, item/Item)
         lower_map = {c.lower(): c for c in df.columns}
 
         if "amount" in lower_map and "Amount" not in df.columns:
@@ -168,11 +175,9 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
         if "item" in lower_map and "Item" not in df.columns:
             df["Item"] = df[lower_map["item"]]
 
-        # If after this we still miss required columns, fail early
         if not {"Item", "Amount", "Category"}.issubset(df.columns):
             return None, None, None, None, f"AI response missing required fields. Got columns: {list(df.columns)}"
 
-        # Coerce numeric
         df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0)
 
         return (
@@ -184,7 +189,6 @@ def audit_financials_with_vision(pnl_image_b64, segment_image_b64):
         )
 
     except Exception as e:
-        # e.g. rate limit, invalid JSON, etc.
         return None, None, None, None, str(e)
 
 
@@ -196,7 +200,7 @@ st.title("Financial Flow Auditor 🕵️‍♂️")
 st.markdown(
     """
 1. Upload the Income Statement (P&L).  
-2. (Optional) Upload the Revenue segments table.  
+2. Optionally upload the revenue by segment table.  
 3. The AI reconciles them into one flow diagram.  
 """
 )
@@ -216,7 +220,7 @@ with col_input1:
 
 with col_input2:
     st.subheader("2. Revenue splits")
-    st.caption("Upload the Revenue by segment/product table.")
+    st.caption("Upload the revenue by segment/product table.")
     seg_file = st.file_uploader("Drop segment screenshot", type=["png", "jpg", "jpeg"], key="seg")
     if seg_file:
         st.image(seg_file, use_container_width=True)
@@ -237,7 +241,6 @@ if pnl_file:
                 st.session_state.audit_note = note
                 st.success("Audit complete.")
             else:
-                # Clear any stale data so we do not render broken charts
                 st.session_state.pop("raw_df", None)
                 st.error(f"Analysis failed: {note}")
 else:
@@ -256,8 +259,8 @@ if "raw_df" in st.session_state:
     if st.session_state.audit_note:
         st.info(f"Auditor finding: {st.session_state.audit_note}")
 
-    # Guard: make sure required columns are present before we start grouping
-    if not {"Category", "Amount"}.issubset(df.columns):
+    # Guard
+    if not {"Category", "Amount", "Item"}.issubset(df.columns):
         st.error(f"Reconciled data is missing required columns. Got: {list(df.columns)}")
         st.dataframe(df)
     else:
@@ -282,20 +285,37 @@ if "raw_df" in st.session_state:
 
         clean_df = edited_df.copy()
 
-        # Aggregate metrics
+        # -------------------------------------------------------------------
+        # Apple-safe aggregation: avoid double-counting "Total net sales"
+        # -------------------------------------------------------------------
+        clean_df["item_norm"] = clean_df["Item"].str.lower().str.strip()
+
+        total_row_mask = clean_df["item_norm"].str.contains("total net sales") | \
+                         clean_df["item_norm"].str.contains("total revenue")
+
+        total_row = clean_df[total_row_mask].sort_values("Amount", ascending=False)
+
+        # Revenue segments: all revenue rows except the explicit total line
+        rev_segments = clean_df[
+            (clean_df["Category"] == "Revenue") & (~total_row_mask)
+        ].copy()
+
+        if not total_row.empty:
+            total_revenue = float(total_row["Amount"].iloc[0])
+        else:
+            total_revenue = float(rev_segments["Amount"].sum())
+
+        # Other aggregates based on categories
         grp = clean_df.groupby("Category")["Amount"].sum()
 
-        rev_segments = clean_df[clean_df["Category"] == "Revenue"]
-        total_revenue = grp.get("Revenue", 0.0)
-
-        cogs = grp.get("COGS", 0.0)
+        cogs = float(grp.get("COGS", 0.0))
         gross_profit = total_revenue - cogs
 
         opex_cats = ["R&D", "Sales & Marketing", "G&A", "Other Opex"]
         total_opex = float(sum(grp.get(c, 0.0) for c in opex_cats))
 
         operating_profit = gross_profit - total_opex
-        tax = grp.get("Tax", 0.0)
+        tax = float(grp.get("Tax", 0.0))
         net_income = operating_profit - tax
 
         with col_kpi:
@@ -313,7 +333,9 @@ if "raw_df" in st.session_state:
                 m_row2_col1.metric("Operating margin", "n/a")
                 m_row2_col2.metric("Net margin", "n/a")
 
-        # Flow diagram
+        # -------------------------------------------------------------------
+        # 3b. Flow diagram
+        # -------------------------------------------------------------------
         company_for_title = st.session_state.company or "Apple Inc."
         period_for_title = st.session_state.period or "September 30, 2025"
         chart_title = f"{company_for_title} P&L for the year ended {period_for_title}"
@@ -344,8 +366,6 @@ if "raw_df" in st.session_state:
                 node_colors.append(role_color(node_role(name, kind), alpha=0.5))
             return label_idx[name]
 
-        # Build flows
-
         # Segments -> Total Revenue
         for _, row in rev_segments.iterrows():
             s = get_idx(row["Item"], kind="segment")
@@ -363,7 +383,7 @@ if "raw_df" in st.session_state:
             t = get_idx("COGS")
             sources.append(s)
             targets.append(t)
-            values.append(float(cogs))
+            values.append(cogs)
             link_colors.append(role_color("cost"))
             link_labels.append(f"COGS · {cogs:,.0f}")
 
@@ -371,7 +391,7 @@ if "raw_df" in st.session_state:
         t_gp = get_idx("Gross Profit")
         sources.append(s_tr)
         targets.append(t_gp)
-        values.append(float(gross_profit))
+        values.append(gross_profit)
         link_colors.append(role_color("profit"))
         link_labels.append(f"Gross profit · {gross_profit:,.0f}")
 
@@ -391,7 +411,7 @@ if "raw_df" in st.session_state:
         t_op = get_idx("Operating Profit")
         sources.append(s_gp)
         targets.append(t_op)
-        values.append(float(operating_profit))
+        values.append(operating_profit)
         link_colors.append(role_color("profit"))
         link_labels.append(f"Operating profit · {operating_profit:,.0f}")
 
@@ -401,7 +421,7 @@ if "raw_df" in st.session_state:
             t = get_idx("Tax")
             sources.append(s)
             targets.append(t)
-            values.append(float(tax))
+            values.append(tax)
             link_colors.append(role_color("cost"))
             link_labels.append(f"Tax · {tax:,.0f}")
 
@@ -409,7 +429,7 @@ if "raw_df" in st.session_state:
         t_ni = get_idx("Net Income")
         sources.append(s_op)
         targets.append(t_ni)
-        values.append(float(net_income))
+        values.append(net_income)
         link_colors.append(role_color("profit"))
         link_labels.append(f"Net income · {net_income:,.0f}")
 
