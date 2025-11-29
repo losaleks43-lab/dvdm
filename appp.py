@@ -513,7 +513,7 @@ font=dict(color="#FFFFFF", size=14),
         )
         agg = agg.merge(dim1_totals, on="Dim1", how="left")
 
-        total_all = agg["Amount"].sum() or 1.0
+        total_all = float(agg["Amount"].sum() or 1.0)
 
         # Column width for each Dim1 = share of total revenue
         agg["Width"] = agg["Dim1Total"] / total_all
@@ -532,7 +532,11 @@ font=dict(color="#FFFFFF", size=14),
             cum += w
         dim1_widths["x_start"] = x_starts
 
-        agg = agg.merge(dim1_widths[["Dim1", "Width", "x_start"]], on=["Dim1", "Width"], how="left")
+        agg = agg.merge(
+            dim1_widths[["Dim1", "Width", "x_start"]],
+            on=["Dim1", "Width"],
+            how="left",
+        )
         agg["x"] = agg["x_start"] + agg["Width"] / 2.0
 
         # Build stacked bars: one trace per subcategory (Dim2)
@@ -550,6 +554,7 @@ font=dict(color="#FFFFFF", size=14),
                         for d1, amt in zip(sub["Dim1"], sub["Amount"])
                     ],
                     textposition="inside",
+                    textangle=90,  # <<< make all labels vertical
                     hovertext=[
                         f"{d1} / {dim2}: {amt:,.0f} ({amt / total_all:,.1%} of revenue)"
                         for d1, amt in zip(sub["Dim1"], sub["Amount"])
@@ -560,16 +565,31 @@ font=dict(color="#FFFFFF", size=14),
 
         mekko_fig = go.Figure(data=mekko_traces)
 
+        # Hide axes, stack by height
         mekko_fig.update_layout(
             barmode="stack",
             showlegend=True,
             height=260,
-            margin=dict(l=40, r=40, t=40, b=40),
+            margin=dict(l=80, r=40, t=40, b=40),
             xaxis=dict(visible=False),
             yaxis=dict(visible=False, range=[0, 1]),
             font=dict(size=12),
             legend_title_text="Subcategory",
         )
 
+        # Total revenue label on the very left, above the strip
+        mekko_fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0,
+            y=1.15,
+            xanchor="left",
+            yanchor="bottom",
+            text=f"Total revenue: {total_all:,.0f}",
+            showarrow=False,
+            font=dict(size=13),
+        )
+
         st.plotly_chart(mekko_fig, use_container_width=True)
+
 
