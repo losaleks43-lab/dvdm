@@ -484,86 +484,92 @@ font=dict(color="#FFFFFF", size=14),
 
     st.plotly_chart(fig, use_container_width=True)
 
-# -------------------------------------------------------------------
-    # 4. Marimekko-style 1D strip (category weight view)
     # -------------------------------------------------------------------
-    st.subheader("Category weight view (Marimekko-style strip)")
+    # 4. Revenue structure (Marimekko-style)
+    # -------------------------------------------------------------------
+    st.subheader("Revenue structure (Marimekko-style)")
 
-    mekko_items = []
-    mekko_values = []
-    mekko_colors = []
+    # Only revenue rows
+    revenue_df = clean_df[clean_df["Category"] == "Revenue"].copy()
 
-    # Revenue segments
-    for _, row in rev_segments.iterrows():
-        mekko_items.append(row["Item"])
-        mekko_values.append(float(row["Amount"]))
-        mekko_colors.append(role_color("revenue"))
+    if not revenue_df.empty:
+        # If items look like "Geo - Product", split into two dimensions
+        if revenue_df["Item"].str.contains(" - ").all():
+            revenue_df[["Dim1", "Dim2"]] = revenue_df["Item"].str.split(" - ", 1, expand=True)
+        else:
+            # Fallback: treat each item as its own primary category
+            revenue_df["Dim1"] = revenue_df["Item"]
+            revenue_df["Dim2"] = "Revenue"
 
-    # COGS
-    if cogs > 0:
-        mekko_items.append("COGS")
-        mekko_values.append(float(cogs))
-        mekko_colors.append(role_color("cost"))
+        # Aggregate in case there are duplicates
+        agg = revenue_df.groupby(["Dim1", "Dim2"], as_index=False)["Amount"].sum()
 
-    # Opex categories
-    for cat in opex_cats:
-        amt = float(grp.get(cat, 0.0))
-        if amt > 0:
-            mekko_items.append(cat)
-            mekko_values.append(amt)
-            mekko_colors.append(role_color("cost"))
+        # Total revenue per primary dimension (e.g. geography)
+        dim1_totals = (
+            agg.groupby("Dim1")["Amount"]
+            .sum()
+            .reset_index()
+            .rename(columns={"Amount": "Dim1Total"})
+        )
+        agg = agg.merge(dim1_totals, on="Dim1", how="left")
 
-    # Tax
-    if tax > 0:
-        mekko_items.append("Tax")
-        mekko_values.append(float(tax))
-        mekko_colors.append(role_color("cost"))
+        total_all = agg["Amount"].sum() or 1.0
 
-    # Net Income (positive block)
-    if net_income != 0:
-        mekko_items.append("Net income")
-        mekko_values.append(float(abs(net_income)))
-        mekko_colors.append(role_color("profit"))
+        # Column width for each Dim1 = share of total revenue
+        agg["Width"] = agg["Dim1Total"] / total_all
 
-    if mekko_items:
-        abs_vals = [abs(v) for v in mekko_values]
-        total_abs = sum(abs_vals) if sum(abs_vals) != 0 else 1.0
+        # Within each column, height = share of that subcategory in the column
+        agg["Height"] = agg["Amount"] / agg["Dim1Total"]
 
-        widths = [v / total_abs for v in abs_vals]
+        # Compute x–positions for each Dim1 column (center of each)
+        dim1_widths = agg[["Dim1", "Width"]].drop_duplicates()
+        dim1_widths = dim1_widths.sort_values("Dim1")  # stable order
 
-        xs = []
         cum = 0.0
-        for w in widths:
-            xs.append(cum + w / 2.0)
+        x_starts = []
+        for w in dim1_widths["Width"]:
+            x_starts.append(cum)
             cum += w
+        dim1_widths["x_start"] = x_starts
 
-        mekko_fig = go.Figure(
-            data=[
+        agg = agg.merge(dim1_widths[["Dim1", "Width", "x_start"]], on=["Dim1", "Width"], how="left")
+        agg["x"] = agg["x_start"] + agg["Width"] / 2.0
+
+        # Build stacked bars: one trace per subcategory (Dim2)
+        mekko_traces = []
+        for dim2, sub in agg.groupby("Dim2"):
+            mekko_traces.append(
                 go.Bar(
-                    x=xs,
-                    y=[1.0] * len(xs),
-                    width=widths,
-                    marker_color=mekko_colors,
-                    marker_line_color="white",
-                    marker_line_width=1,
-                    text=[f"{name}\n{val:,.0f}" for name, val in zip(mekko_items, mekko_values)],
+                    x=sub["x"],
+                    y=sub["Height"],
+                    width=sub["Width"],
+                    name=dim2,
+                    marker_color=role_color("revenue"),
+                    text=[
+                        f"{d1} / {dim2}\n{amt:,.0f}"
+                        for d1, amt in zip(sub["Dim1"], sub["Amount"])
+                    ],
                     textposition="inside",
                     hovertext=[
-                        f"{name}: {val:,.0f} ({abs(val) / total_abs:,.1%})"
-                        for name, val in zip(mekko_items, mekko_values)
+                        f"{d1} / {dim2}: {amt:,.0f} ({amt / total_all:,.1%} of revenue)"
+                        for d1, amt in zip(sub["Dim1"], sub["Amount"])
                     ],
                     hoverinfo="text",
                 )
-            ]
-        )
+            )
 
-        mekko_fig.update_xaxes(visible=False, showticklabels=False, range=[0, 1])
-        mekko_fig.update_yaxes(visible=False, showticklabels=False, range=[0, 1.2])
+        mekko_fig = go.Figure(data=mekko_traces)
 
         mekko_fig.update_layout(
-            height=220,
+            barmode="stack",
+            showlegend=True,
+            height=260,
             margin=dict(l=40, r=40, t=40, b=40),
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False, range=[0, 1]),
             font=dict(size=12),
+            legend_title_text="Subcategory",
         )
 
         st.plotly_chart(mekko_fig, use_container_width=True)
+
